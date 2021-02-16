@@ -1,0 +1,428 @@
+diff --git a/target/linux/ramips/base-files/etc/board.d/01_leds b/target/linux/ramips/base-files/etc/board.d/01_leds
+index 5c005db0c1..bff844671c 100755
+--- a/target/linux/ramips/base-files/etc/board.d/01_leds
++++ b/target/linux/ramips/base-files/etc/board.d/01_leds
+@@ -13,6 +13,9 @@ boardname="${board##*,}"
+ board_config_update
+ 
+ case $board in
++dir-2660-a1)
++	ucidef_set_led_netdev "wan" "wan" "white:net" "wan"
++	;;
+ 3g-6200n|\
+ br-6475nd|\
+ mzk-w300nh2)
+diff --git a/target/linux/ramips/base-files/etc/board.d/02_network b/target/linux/ramips/base-files/etc/board.d/02_network
+index 8ca1831afe..cb5f0d58b0 100755
+--- a/target/linux/ramips/base-files/etc/board.d/02_network
++++ b/target/linux/ramips/base-files/etc/board.d/02_network
+@@ -170,6 +170,7 @@ ramips_setup_interfaces()
+ 		ucidef_set_interface_lan "eth0"
+ 		;;
+ 	alfa-network,quad-e4g|\
++	dir-2660-a1|\
+ 	netgear,r6120|\
+ 	r6220|\
+ 	netgear,r6350|\
+@@ -504,6 +505,7 @@ ramips_setup_macs()
+ 		lan_mac=$(cat /sys/class/net/eth0/address)
+ 		;;
+ 	asus,rt-ac57u|\
++	dir-2660-a1|\
+ 	vr500)
+ 		lan_mac=$(mtd_get_mac_binary factory 57344)
+ 		wan_mac=$(mtd_get_mac_binary factory 57350)
+diff --git a/target/linux/ramips/base-files/lib/ramips.sh b/target/linux/ramips/base-files/lib/ramips.sh
+index 093303892c..eb2c91b5d0 100755
+--- a/target/linux/ramips/base-files/lib/ramips.sh
++++ b/target/linux/ramips/base-files/lib/ramips.sh
+@@ -160,6 +160,9 @@ ramips_board_detect() {
+ 	*"DIR-860L B1")
+ 		name="dir-860l-b1"
+ 		;;
++	*"DIR-2660 A1")
++		name="dir-2660-a1"
++		;;
+ 	*"Dovado Tiny AC")
+ 		name="tiny-ac"
+ 		;;
+diff --git a/target/linux/ramips/base-files/lib/upgrade/platform.sh b/target/linux/ramips/base-files/lib/upgrade/platform.sh
+index 3b967aac87..d6bc674177 100755
+--- a/target/linux/ramips/base-files/lib/upgrade/platform.sh
++++ b/target/linux/ramips/base-files/lib/upgrade/platform.sh
+@@ -60,6 +60,7 @@ platform_do_upgrade() {
+ 	netgear,r6350|\
+ 	ubnt-erx|\
+ 	ubnt-erx-sfp|\
++	dir-2660-a1|\
+ 	xiaomi,mir3g|\
+ 	xiaomi,mir3p)
+ 		nand_do_upgrade "$1"
+diff --git a/target/linux/ramips/image/Makefile b/target/linux/ramips/image/Makefile
+index f51e337afd..2813d49a6e 100644
+--- a/target/linux/ramips/image/Makefile
++++ b/target/linux/ramips/image/Makefile
+@@ -62,6 +62,11 @@ define Build/trx
+ 		-a 4 -f $(IMAGE_ROOTFS)
+ endef
+ 
++define Build/uimage-padhdr
++	uimage_padhdr $(if $(1),-l $(1)) -i $@ -o $@.new
++	mv $@.new $@
++endef
++
+ define Build/loader-common
+ 	rm -rf $@.src
+ 	$(MAKE) -C lzma-loader \
+diff --git a/target/linux/ramips/image/mt7621.mk b/target/linux/ramips/image/mt7621.mk
+index 28ae0d451f..99d551896f 100644
+--- a/target/linux/ramips/image/mt7621.mk
++++ b/target/linux/ramips/image/mt7621.mk
+@@ -116,6 +116,23 @@ define Device/asus_rt-ac57u
+ endef
+ TARGET_DEVICES += asus_rt-ac57u
+ 
++define Device/dir-2660-a1
++  $(Device/uimage-lzma-loader)
++  DTS := DIR-2660-A1
++  BLOCKSIZE := 128k
++  PAGESIZE := 2048
++  KERNEL_SIZE := 4096k
++  UBINIZE_OPTS := -E 5
++  IMAGES += factory.bin
++  DEVICE_TITLE := D-Link DIR-2660 A1
++  KERNEL := $$(KERNEL) | uimage-padhdr 96
++  IMAGE_SIZE := $(ralink_default_fw_size_32M)
++  IMAGE/sysupgrade.bin := sysupgrade-tar | append-metadata
++  IMAGE/factory.bin := append-kernel | pad-to $$(KERNEL_SIZE) | append-ubi | check-size $$$$(IMAGE_SIZE)
++  DEVICE_PACKAGES := kmod-mt7615e kmod-mt7615-firmware kmod-usb3 kmod-usb-ledtrig-usbport wpad-basic
++endef
++TARGET_DEVICES += dir-2660-a1
++
+ define Device/dir-860l-b1
+   $(Device/seama)
+   DTS := DIR-860L-B1
+diff --git a/target/linux/ramips/dts/DIR-2660-A1.dts b/target/linux/ramips/dts/DIR-2660-A1.dts
+new file mode 100644
+index 0000000000..d48adecde6
+--- /dev/null
++++ b/target/linux/ramips/dts/DIR-2660-A1.dts
+@@ -0,0 +1,180 @@
++// SPDX-License-Identifier: GPL-2.0-or-later OR MIT
++/dts-v1/;
++
++#include "mt7621.dtsi"
++
++#include <dt-bindings/gpio/gpio.h>
++#include <dt-bindings/input/input.h>
++
++/ {
++	compatible = "dlink,dir-2660-a1", "mediatek,mt7621-soc";
++	model = "D-Link DIR-2660 A1";
++
++	aliases {
++		led-boot = &led_power_orange;
++		led-failsafe = &led_power_white;
++		led-running = &led_power_white;
++		led-upgrade = &led_net_orange;
++	};
++
++	memory@0 {
++		device_type = "memory";
++		reg = <0x0 0x10000000>;
++	};
++
++	chosen {
++		bootargs = "console=ttyS0,57600";
++	};
++
++	leds {
++		compatible = "gpio-leds";
++
++		led_power_orange: power_orange {
++			label = "dir-2660-a1:orange:power";
++			gpios = <&gpio0 8 GPIO_ACTIVE_LOW>;
++		};
++
++		led_power_white: power_white {
++			label = "dir-2660-a1:white:power";
++			gpios = <&gpio0 16 GPIO_ACTIVE_LOW>;
++		};
++
++		led_net_orange: net_orange {
++			label = "dir-2660-a1:orange:net";
++			gpios = <&gpio0 4 GPIO_ACTIVE_LOW>;
++		};
++
++		net_white {
++			label = "dir-2660-a1:white:net";
++			gpios = <&gpio0 3 GPIO_ACTIVE_LOW>;
++		};
++
++		usb2_white {
++			label = "dir-2660-a1:white:usb2";
++			gpios = <&gpio0 13 GPIO_ACTIVE_LOW>;
++			trigger-sources = <&ehci_port2>;
++			linux,default-trigger = "usbport";
++		};
++
++		usb3_white {
++			label = "dir-2660-a1:white:usb3";
++			gpios = <&gpio0 14 GPIO_ACTIVE_LOW>;
++			trigger-sources = <&xhci_ehci_port1>;
++			linux,default-trigger = "usbport";
++		};
++	};
++
++	keys {
++		compatible = "gpio-keys-polled";
++		poll-interval = <20>;
++
++		reset {
++			label = "reset";
++			gpios = <&gpio0 15 GPIO_ACTIVE_LOW>;
++			linux,code = <KEY_RESTART>;
++		};
++
++		wps {
++			label = "wps";
++			gpios = <&gpio0 18 GPIO_ACTIVE_LOW>;
++			linux,code = <KEY_WPS_BUTTON>;
++		};
++	};
++};
++
++&nand {
++	status = "okay";
++
++	partitions {
++		compatible = "fixed-partitions";
++		#address-cells = <1>;
++		#size-cells = <1>;
++
++		partition@0 {
++			label = "Bootloader";
++			reg = <0x0 0x80000>;
++			read-only;
++		};
++
++		partition@80000 {
++			label = "config";
++			reg = <0x80000 0x80000>;
++			read-only;
++		};
++
++		factory: partition@100000 {
++			label = "factory";
++			reg = <0x100000 0x40000>;
++			read-only;
++		};
++
++		partition@140000 {
++			label = "config2";
++			reg = <0x140000 0x40000>;
++			read-only;
++		};
++
++		partition@180000 {
++			label = "firmware";
++			compatible = "sge,uimage";
++			reg = <0x180000 0x2800000>;
++		};
++
++		partition@2980000 {
++			label = "private";
++			reg = <0x2980000 0x2000000>;
++			read-only;
++		};
++
++		partition@4980000 {
++			label = "firmware2";
++			compatible = "sge,uimage";
++			reg = <0x4980000 0x2800000>;
++		};
++
++		partition@7180000 {
++			label = "mydlink";
++			reg = <0x7180000 0x600000>;
++			read-only;
++		};
++
++		partition@7780000 {
++			label = "reserved";
++			reg = <0x7780000 0x880000>;
++			read-only;
++		};
++	};
++};
++
++&pcie {
++	status = "okay";
++};
++
++&pcie0 {
++	mt76@0,0 {
++		reg = <0x0000 0 0 0 0>;
++		mediatek,mtd-eeprom = <&factory 0x0000>;
++		ieee80211-freq-limit = <2400000 2500000>;
++	};
++};
++
++&pcie1 {
++	mt76@0,0 {
++		reg = <0x0000 0 0 0 0>;
++		mediatek,mtd-eeprom = <&factory 0x8000>;
++		ieee80211-freq-limit = <5000000 6000000>;
++	};
++};
++
++&pinctrl {
++	state_default: pinctrl0 {
++		gpio {
++			ralink,group = "i2c", "uart2", "uart3", "rgmii2", "sdhci";
++			ralink,function = "gpio";
++		};
++	};
++};
++
++&ethernet {
++	mtd-mac-address = <&factory 0xe000>;
++};
+diff --git a/target/linux/generic/files/drivers/mtd/mtdsplit/mtdsplit_uimage.c b/target/linux/generic/files/drivers/mtd/mtdsplit/mtdsplit_uimage.c
+index bc2705ffad..52fe77edc5
+--- a/target/linux/generic/files/drivers/mtd/mtdsplit/mtdsplit_uimage.c
++++ b/target/linux/generic/files/drivers/mtd/mtdsplit/mtdsplit_uimage.c
+@@ -25,7 +25,7 @@
+  * uimage_header itself is only 64B, but it may be prepended with another data.
+  * Currently the biggest size is for Edimax devices: 20B + 64B
+  */
+-#define MAX_HEADER_LEN		84
++#define MAX_HEADER_LEN		96
+ 
+ #define IH_MAGIC	0x27051956	/* Image Magic Number		*/
+ #define IH_NMLEN		32	/* Image Name Length		*/
+@@ -84,7 +84,7 @@ read_uimage_header(struct mtd_info *mtd, size_t offset, u_char *buf,
+ static int __mtdsplit_parse_uimage(struct mtd_info *master,
+ 				   const struct mtd_partition **pparts,
+ 				   struct mtd_part_parser_data *data,
+-				   ssize_t (*find_header)(u_char *buf, size_t len))
++				   ssize_t (*find_header)(u_char *buf, size_t len, int *extralen))
+ {
+ 	struct mtd_partition *parts;
+ 	u_char *buf;
+@@ -96,6 +96,7 @@ static int __mtdsplit_parse_uimage(struct mtd_info *master,
+ 	size_t rootfs_size = 0;
+ 	int uimage_part, rf_part;
+ 	int ret;
++	int extralen;
+ 	enum mtdsplit_part_type type;
+ 
+ 	nr_parts = 2;
+@@ -119,7 +120,8 @@ static int __mtdsplit_parse_uimage(struct mtd_info *master,
+ 		if (ret)
+ 			continue;
+ 
+-		ret = find_header(buf, MAX_HEADER_LEN);
++		extralen = 0;
++		ret = find_header(buf, MAX_HEADER_LEN, &extralen);
+ 		if (ret < 0) {
+ 			pr_debug("no valid uImage found in \"%s\" at offset %llx\n",
+ 				 master->name, (unsigned long long) offset);
+@@ -127,7 +129,7 @@ static int __mtdsplit_parse_uimage(struct mtd_info *master,
+ 		}
+ 		header = (struct uimage_header *)(buf + ret);
+ 
+-		uimage_size = sizeof(*header) + be32_to_cpu(header->ih_size) + ret;
++		uimage_size = sizeof(*header) +	be32_to_cpu(header->ih_size) + ret + extralen;
+ 		if ((offset + uimage_size) > master->size) {
+ 			pr_debug("uImage exceeds MTD device \"%s\"\n",
+ 				 master->name);
+@@ -205,7 +207,7 @@ err_free_parts:
+ 	return ret;
+ }
+ 
+-static ssize_t uimage_verify_default(u_char *buf, size_t len)
++static ssize_t uimage_verify_default(u_char *buf, size_t len, int *extralen)
+ {
+ 	struct uimage_header *header = (struct uimage_header *)buf;
+ 
+@@ -268,7 +270,7 @@ static struct mtd_part_parser uimage_generic_parser = {
+ #define FW_MAGIC_WNDR3700V2	0x33373031
+ #define FW_MAGIC_WPN824N	0x31313030
+ 
+-static ssize_t uimage_verify_wndr3700(u_char *buf, size_t len)
++static ssize_t uimage_verify_wndr3700(u_char *buf, size_t len, int *extralen)
+ {
+ 	struct uimage_header *header = (struct uimage_header *)buf;
+ 	uint8_t expected_type = IH_TYPE_FILESYSTEM;
+@@ -331,7 +333,7 @@ static struct mtd_part_parser uimage_netgear_parser = {
+ #define FW_EDIMAX_OFFSET	20
+ #define FW_MAGIC_EDIMAX		0x43535953
+ 
+-static ssize_t uimage_find_edimax(u_char *buf, size_t len)
++static ssize_t uimage_find_edimax(u_char *buf, size_t len, int *extralen)
+ {
+ 	u32 *magic;
+ 
+@@ -344,7 +346,7 @@ static ssize_t uimage_find_edimax(u_char *buf, size_t len)
+ 	if (be32_to_cpu(*magic) != FW_MAGIC_EDIMAX)
+ 		return -EINVAL;
+ 
+-	if (!uimage_verify_default(buf + FW_EDIMAX_OFFSET, len))
++	if (!uimage_verify_default(buf + FW_EDIMAX_OFFSET, len, extralen))
+ 		return FW_EDIMAX_OFFSET;
+ 
+ 	return -EINVAL;
+@@ -376,6 +378,43 @@ static struct mtd_part_parser uimage_edimax_parser = {
+ 	.type = MTD_PARSER_TYPE_FIRMWARE,
+ };
+ 
++/**************************************************
++ * SGE (T&W) Shenzhen Gongjin Electronics
++ **************************************************/
++
++#define SGE_PAD_LEN		96
++
++static ssize_t uimage_find_sge(u_char *buf, size_t len, int *extralen)
++{
++	if (uimage_verify_default(buf, len, extralen) < 0)
++		return -EINVAL;
++
++	*extralen = SGE_PAD_LEN;
++
++	return 0;
++}
++
++static int
++mtdsplit_uimage_parse_sge(struct mtd_info *master,
++			      const struct mtd_partition **pparts,
++			      struct mtd_part_parser_data *data)
++{
++	return __mtdsplit_parse_uimage(master, pparts, data,
++				       uimage_find_sge);
++}
++
++static const struct of_device_id mtdsplit_uimage_sge_of_match_table[] = {
++	{ .compatible = "sge,uimage" },
++	{},
++};
++
++static struct mtd_part_parser uimage_sge_parser = {
++	.owner = THIS_MODULE,
++	.name = "sge-fw",
++	.of_match_table = mtdsplit_uimage_sge_of_match_table,
++	.parse_fn = mtdsplit_uimage_parse_sge,
++};
++
+ /**************************************************
+  * Init
+  **************************************************/
+@@ -385,6 +424,7 @@ static int __init mtdsplit_uimage_init(void)
+ 	register_mtd_parser(&uimage_generic_parser);
+ 	register_mtd_parser(&uimage_netgear_parser);
+ 	register_mtd_parser(&uimage_edimax_parser);
++	register_mtd_parser(&uimage_sge_parser);
+ 
+ 	return 0;
+ }
+
